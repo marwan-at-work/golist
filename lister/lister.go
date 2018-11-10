@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
@@ -11,8 +12,10 @@ import (
 
 // New returns a new DB interface, implemented by boltDB.
 func New(path string, lggr *logrus.Logger) (Service, error) {
-	// TODO: this can get stuck for some reason.
-	db, err := bolt.Open(path, 0660, nil)
+	// TODO: By the time we get here, this shouldn't time out.
+	db, err := bolt.Open(path, 0660, &bolt.Options{
+		Timeout: time.Second * 5,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("could not open DB: %v", err)
 	}

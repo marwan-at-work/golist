@@ -91,11 +91,13 @@ func handler(gs lister.Service, ws watcher.Service, lggr *logrus.Logger) http.Ha
 			http.Error(w, s, 400)
 			return
 		}
-		go ws.Watch(b.Dir, b.Args)
 		bts, err := gs.Get(b.Dir, b.Args)
 		if err != nil {
-			// TODO: handle err
+			// TODO: should pass stdout, stderr like a process.
+			fmt.Fprint(w, err.Error())
+			return
 		}
+		ws.Watch(b.Dir, b.Args)
 		w.Write(bts)
 	}
 }
