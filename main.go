@@ -50,7 +50,7 @@ func main() {
 }
 
 func tryServer() error {
-	return exec.Command("./golist", "-s").Start()
+	return exec.Command("golist", "-s").Start()
 }
 
 func getClient() *http.Client {

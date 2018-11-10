@@ -109,6 +109,9 @@ func (c *service) UpdateAll() error {
 }
 
 func runGoList(args []string, dir string) ([]byte, error) {
+	if len(args) < 1 || args[0] != "list" {
+		return nil, fmt.Errorf("first argument must be 'list'")
+	}
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
 	bts, err := cmd.Output()
