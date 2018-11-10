@@ -40,6 +40,11 @@ func main() {
 	req = req.WithContext(ctx)
 	resp, err := c.Do(req)
 	if err != nil {
+		if *exit {
+			// don't close the server if it's already closed
+			// TODO: check for no conn err
+			return
+		}
 		must(tryServer())
 		time.Sleep(time.Second)
 		resp, err = c.Do(req)

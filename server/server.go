@@ -25,16 +25,16 @@ func RunServer(verbose bool) error {
 		level = logrus.DebugLevel
 	}
 	lggr.SetLevel(level)
-
-	// TODO: dbpath
-	gs, err := lister.New(GetDBPath(), lggr)
+	dbPath := GetDBPath()
+	lggr.Debugf("db path at %v", dbPath)
+	gs, err := lister.New(dbPath, lggr)
 	if err != nil {
 		return err
 	}
+	defer gs.Close()
 	go gs.UpdateAll()
 	w := watcher.NewService(gs, lggr)
 	ch := make(chan os.Signal, 2) // len == 2: one for ctrl+C and one for /exit
-
 	http.HandleFunc("/", timer(handler(gs, w, lggr), lggr))
 	http.HandleFunc("/exit", exitHandler(ch))
 
@@ -43,7 +43,6 @@ func RunServer(verbose bool) error {
 	if err != nil {
 		return err
 	}
-
 	s := &http.Server{Handler: http.DefaultServeMux}
 	signal.Notify(ch, os.Interrupt)
 	go func() {

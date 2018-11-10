@@ -11,7 +11,8 @@ import (
 
 // New returns a new DB interface, implemented by boltDB.
 func New(path string, lggr *logrus.Logger) (Service, error) {
-	db, err := bolt.Open(path, 0600, nil)
+	// TODO: this can get stuck for some reason.
+	db, err := bolt.Open(path, 0660, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not open DB: %v", err)
 	}
@@ -28,6 +29,7 @@ type Service interface {
 	Get(dir string, args []string) ([]byte, error)
 	Update(dir string, args []string) error
 	UpdateAll() error
+	Close() error
 }
 
 type service struct {
@@ -106,6 +108,10 @@ func (c *service) UpdateAll() error {
 		c.lggr.Debugf("update all complete: ran go list %v times", num)
 		return nil
 	})
+}
+
+func (c *service) Close() error {
+	return c.db.Close()
 }
 
 func runGoList(args []string, dir string) ([]byte, error) {
