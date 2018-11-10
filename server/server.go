@@ -27,7 +27,7 @@ func RunServer(verbose bool) error {
 	lggr.SetLevel(level)
 
 	// TODO: dbpath
-	gs, err := lister.New("./list.db", lggr)
+	gs, err := lister.New(GetDBPath(), lggr)
 	if err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func RunServer(verbose bool) error {
 	http.HandleFunc("/", timer(handler(gs, w, lggr), lggr))
 	http.HandleFunc("/exit", exitHandler(ch))
 
-	socket := getSocketPath()
+	socket := GetSocketPath()
 	l, err := net.Listen("unix", socket)
 	if err != nil {
 		return err
@@ -70,15 +70,17 @@ func timer(h http.HandlerFunc, lggr *logrus.Logger) http.HandlerFunc {
 	}
 }
 
+// Body is the golist body request
+//
 // TODO: add no-cache flag so that when error occurs, try it.
-type body struct {
+type Body struct {
 	Args []string `json:"args"`
 	Dir  string   `json:"dir"`
 }
 
 func handler(gs lister.Service, ws watcher.Service, lggr *logrus.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var b body
+		var b Body
 		err := json.NewDecoder(r.Body).Decode(&b)
 		if err != nil {
 			lggr.Warnf("incorrect request body: %v", err)
@@ -109,14 +111,23 @@ func exitHandler(ch chan os.Signal) http.HandlerFunc {
 	}
 }
 
-// getSocketPath is the path of a unix socket for
+// GetSocketPath is the path of a unix socket for
 // client/server communication.
-func getSocketPath() string {
+func GetSocketPath() string {
 	tempdir := os.TempDir()
 	if tempdir == "" {
 		log.Fatal("no temp dir provided by os")
 	}
 	return filepath.Join(tempdir, "golistsocket")
+}
+
+// GetDBPath returns the path to the cache database.
+func GetDBPath() string {
+	tempdir := os.TempDir()
+	if tempdir == "" {
+		log.Fatal("no temp dir provided by os")
+	}
+	return filepath.Join(tempdir, "golist.db")
 }
 
 func validDir(dir string) (string, bool) {
