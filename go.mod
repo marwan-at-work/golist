@@ -1,4 +1,4 @@
-module marwan.io/golist-server
+module marwan.io/golist
 
 require (
 	github.com/fsnotify/fsnotify v1.4.7

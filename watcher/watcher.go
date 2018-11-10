@@ -9,11 +9,11 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/sirupsen/logrus"
-	"marwan.io/golist-server/golist"
+	"marwan.io/golist/lister"
 )
 
 // NewService returns a new watcher
-func NewService(gs golist.Service, lggr *logrus.Logger) Service {
+func NewService(gs lister.Service, lggr *logrus.Logger) Service {
 	s := &service{}
 	s.watchers = map[string]*job{}
 	if lggr == nil {
@@ -106,7 +106,7 @@ type service struct {
 	watchers map[string]*job
 	mu       sync.Mutex
 	lggr     *logrus.Logger
-	gs       golist.Service
+	gs       lister.Service
 }
 
 func (s *service) close(dir string, w *fsnotify.Watcher) {
@@ -136,7 +136,7 @@ func (j *job) runTimer() {
 	}
 }
 
-func (j *job) runWatcher(gs golist.Service) {
+func (j *job) runWatcher(gs lister.Service) {
 	for {
 		select {
 		case event, ok := <-j.w.Events:

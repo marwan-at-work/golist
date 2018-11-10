@@ -2,8 +2,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 
-	"marwan.io/golist-server/server"
+	"marwan.io/golist/server"
 )
 
 var sflag = flag.Bool("s", false, "run the golist server")
@@ -14,6 +15,7 @@ func main() {
 	if *sflag {
 		must(server.RunServer(*verbose))
 	}
+	fmt.Println(flag.Args())
 }
 
 func must(err error) {

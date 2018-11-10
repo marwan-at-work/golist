@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"marwan.io/golist-server/golist"
-	"marwan.io/golist-server/watcher"
+	"marwan.io/golist/lister"
+	"marwan.io/golist/watcher"
 )
 
 // RunServer runs the golist caching server on a unix socket.
@@ -27,7 +27,7 @@ func RunServer(verbose bool) error {
 	lggr.SetLevel(level)
 
 	// TODO: dbpath
-	gs, err := golist.New("./list.db", lggr)
+	gs, err := lister.New("./list.db", lggr)
 	if err != nil {
 		return err
 	}
@@ -38,11 +38,8 @@ func RunServer(verbose bool) error {
 	http.HandleFunc("/", timer(handler(gs, w, lggr), lggr))
 	http.HandleFunc("/exit", exitHandler(ch))
 
-	p := getSockDir()
-	p = ":8912"
-	l, err := net.Listen("tcp", p)
-	// TODO: use unix socket
-	// l, err := net.Listen("unix", p)
+	socket := getSocketPath()
+	l, err := net.Listen("unix", socket)
 	if err != nil {
 		return err
 	}
@@ -50,7 +47,7 @@ func RunServer(verbose bool) error {
 	s := &http.Server{Handler: http.DefaultServeMux}
 	signal.Notify(ch, os.Interrupt)
 	go func() {
-		lggr.Debugf("listening on unix socket: %v", p)
+		lggr.Debugf("listening on unix socket: %v", socket)
 		go s.Serve(l)
 	}()
 
@@ -60,7 +57,7 @@ func RunServer(verbose bool) error {
 	if err != nil && err != http.ErrServerClosed {
 		lggr.Error(err)
 	}
-	os.RemoveAll(p)
+	os.RemoveAll(socket)
 	lggr.Info("closing watchers")
 	return w.Close()
 }
@@ -79,7 +76,7 @@ type body struct {
 	Dir  string   `json:"dir"`
 }
 
-func handler(gs golist.Service, ws watcher.Service, lggr *logrus.Logger) http.HandlerFunc {
+func handler(gs lister.Service, ws watcher.Service, lggr *logrus.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var b body
 		err := json.NewDecoder(r.Body).Decode(&b)
@@ -112,12 +109,14 @@ func exitHandler(ch chan os.Signal) http.HandlerFunc {
 	}
 }
 
-func getSockDir() string {
+// getSocketPath is the path of a unix socket for
+// client/server communication.
+func getSocketPath() string {
 	tempdir := os.TempDir()
 	if tempdir == "" {
 		log.Fatal("no temp dir provided by os")
 	}
-	return filepath.Join(tempdir, "golistserver")
+	return filepath.Join(tempdir, "golistsocket")
 }
 
 func validDir(dir string) (string, bool) {
