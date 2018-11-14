@@ -5,7 +5,7 @@ A server that caches go list results.
 # Usage
 
 ```
-go get marwna.io/golist
+go get marwan.io/golist
 export GOPACKAGESDRIVER=golist
 ```
 
