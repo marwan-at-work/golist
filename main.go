@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"time"
 
+	"marwan.io/golist/cmddriver"
 	"marwan.io/golist/server"
 )
 
@@ -20,6 +21,10 @@ var verbose = flag.Bool("v", false, "verbose golist server")
 var exit = flag.Bool("exit", false, "exit the server")
 
 func main() {
+	if true {
+		cmddriver.Main()
+		return
+	}
 	flag.Parse()
 	if *sflag {
 		must(server.RunServer(*verbose))

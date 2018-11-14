@@ -1,26 +1,27 @@
 package watcher
 
 import (
-	"io/ioutil"
-	"path/filepath"
+	"context"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/sirupsen/logrus"
-	"marwan.io/golist/lister"
+	"marwan.io/golist/cache"
+	"marwan.io/golist/driver"
+	"marwan.io/golist/hash"
 )
 
 // NewService returns a new watcher
-func NewService(gs lister.Service, lggr *logrus.Logger) Service {
+func NewService(dc cache.Service, lggr *logrus.Logger) Service {
 	s := &service{}
 	s.watchers = map[string]*job{}
 	if lggr == nil {
 		lggr = logrus.New()
 	}
 	s.lggr = lggr
-	s.gs = gs
+	s.dc = dc
 
 	return s
 }
@@ -29,24 +30,26 @@ func NewService(gs lister.Service, lggr *logrus.Logger) Service {
 // and update the golist results
 // if anything changes in your .go files.
 type Service interface {
-	Watch(dir string, args []string) error
+	Watch(cfg *driver.Config) error
 	Close() error
 }
 
-func (s *service) Watch(dir string, args []string) error {
+type service struct {
+	watchers map[string]*job
+	mu       sync.Mutex
+	lggr     *logrus.Logger
+	dc       cache.Service
+}
+
+func (s *service) Watch(cfg *driver.Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	key := getKey(args)
-	j, ok := s.watchers[dir]
+	key := hash.KeyString(cfg)
+	j, ok := s.watchers[key]
 	if ok {
-		s.lggr.Debugf("%v: already has watcher", dir)
+		s.lggr.Debugf("%v: already has watcher", cfg.Patterns)
 		j.requestExtension()
-		if argExists(key, j.args) {
-			s.lggr.Debugf("key %v: exists, returning.", key)
-			return nil
-		}
-		// TODO: data race with watcher callbacks
-		j.args = append(j.args, key)
+		// TODO: one watcher for all configs
 		return nil
 	}
 
@@ -54,17 +57,18 @@ func (s *service) Watch(dir string, args []string) error {
 	if err != nil {
 		return err
 	}
-	j = &job{w: w, dir: dir}
-	j.args = append(j.args, key)
+	j = &job{w: w, dc: s.dc}
 	j.timer = time.NewTimer(cacheTime)
 	j.lggr = s.lggr
 	j.deleter = s.close
+	j.key = key
+	j.cfg = cfg
 	j.addFiles()
 	j.timer = time.NewTimer(cacheTime)
 	j.extension = make(chan struct{})
-	s.watchers[dir] = j
+	s.watchers[key] = j
 	go j.runTimer()
-	go j.runWatcher(s.gs)
+	go j.runWatcher()
 
 	return nil
 }
@@ -82,38 +86,32 @@ func (s *service) Close() error {
 	return nil
 }
 
+func (s *service) close(key string, w *fsnotify.Watcher) {
+	s.mu.Lock()
+	w.Close()
+	delete(s.watchers, key)
+	s.mu.Unlock()
+}
+
 type job struct {
 	w         *fsnotify.Watcher
-	dir       string
-	args      []string
+	dc        cache.Service
+	key       string
+	cfg       *driver.Config
 	timer     *time.Timer
 	lggr      *logrus.Logger
-	deleter   func(dir string, w *fsnotify.Watcher)
+	deleter   func(key string, w *fsnotify.Watcher)
 	extension chan struct{}
 }
 
 const cacheTime = time.Hour
 
 func (j *job) extendDeadline() {
-	j.lggr.Debugf("%v: extending deadline", j.dir)
+	j.lggr.Debugf("%v: extending deadline", j.cfg.Patterns)
 	if !j.timer.Stop() {
 		<-j.timer.C
 	}
 	j.timer.Reset(cacheTime)
-}
-
-type service struct {
-	watchers map[string]*job
-	mu       sync.Mutex
-	lggr     *logrus.Logger
-	gs       lister.Service
-}
-
-func (s *service) close(dir string, w *fsnotify.Watcher) {
-	s.mu.Lock()
-	w.Close()
-	delete(s.watchers, dir)
-	s.mu.Unlock()
 }
 
 func (j *job) requestExtension() {
@@ -127,8 +125,8 @@ func (j *job) runTimer() {
 	for {
 		select {
 		case <-j.timer.C:
-			j.lggr.Debugf("%v: expired. Removing watcher", j.dir)
-			j.deleter(j.dir, j.w)
+			j.lggr.Debugf("%v: expired. Removing watcher", j.cfg.Patterns)
+			j.deleter(j.key, j.w)
 			return
 		case <-j.extension:
 			j.extendDeadline()
@@ -136,7 +134,7 @@ func (j *job) runTimer() {
 	}
 }
 
-func (j *job) runWatcher(gs lister.Service) {
+func (j *job) runWatcher() {
 	for {
 		select {
 		case event, ok := <-j.w.Events:
@@ -146,15 +144,17 @@ func (j *job) runWatcher(gs lister.Service) {
 			}
 			j.requestExtension()
 			if event.Op&fsnotify.Write == fsnotify.Write {
-				j.lggr.Debugf("%v changed. Updating %v", event.Name, j.dir)
-				for _, key := range j.args {
-					// TODO log err
-					args := getArgs(key)
-					gs.Update(j.dir, args)
+				j.lggr.Debugf("%v changed. Updating...", event.Name)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+				err := j.dc.Update(ctx, j.cfg)
+				if err != nil {
+					j.lggr.Debugf("error updating %v: %v", event.Name, err)
 				}
+				cancel()
 			}
 			if event.Op&fsnotify.Create == fsnotify.Create {
-				j.w.Add(event.Name)
+				// j.w.Add(event.Name)
+				// TODO: figure out new files -- maybe don't need them.
 			}
 			if event.Op&fsnotify.Rename == fsnotify.Rename {
 				// TODO: figure out renaming
@@ -169,19 +169,12 @@ func (j *job) runWatcher(gs lister.Service) {
 }
 
 func (j *job) addFiles() error {
-	files, err := ioutil.ReadDir(j.dir)
-	if err != nil {
-		return err
-	}
+	files := j.parseFiles()
 
-	for _, fi := range files {
-		fileName := fi.Name()
-		if fi.IsDir() || !isGoFile(fileName) {
-			continue
-		}
-		f := filepath.Join(j.dir, fileName)
-		j.lggr.Debugf("adding %v", f)
-		if err := j.w.Add(f); err != nil {
+	for _, file := range files {
+		// TODO: stat file or let go/packages handle err?
+		j.lggr.Debugf("adding %v", file)
+		if err := j.w.Add(file); err != nil {
 			return err
 		}
 	}
@@ -189,23 +182,14 @@ func (j *job) addFiles() error {
 	return nil
 }
 
-func isGoFile(f string) bool {
-	return filepath.Ext(f) == ".go"
-}
-
-func getKey(args []string) string {
-	return strings.Join(args, "__x__")
-}
-
-func getArgs(key string) []string {
-	return strings.Split(key, "__x__")
-}
-
-func argExists(element string, data []string) bool {
-	for _, v := range data {
-		if element == v {
-			return true
+func (j *job) parseFiles() []string {
+	files := []string{}
+	for _, pattern := range j.cfg.Patterns {
+		prefix := "file="
+		if strings.HasPrefix(pattern, prefix) {
+			file := pattern[len(prefix):]
+			files = append(files, file)
 		}
 	}
-	return false
+	return files
 }

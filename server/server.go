@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/gob"
 	"fmt"
 	"log"
 	"net"
@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"marwan.io/golist/lister"
+	"marwan.io/golist/cache"
+	"marwan.io/golist/driver"
 	"marwan.io/golist/watcher"
 )
 
@@ -27,15 +28,14 @@ func RunServer(verbose bool) error {
 	lggr.SetLevel(level)
 	dbPath := GetDBPath()
 	lggr.Debugf("db path at %v", dbPath)
-	gs, err := lister.New(dbPath, lggr)
+	dc, err := cache.New(dbPath, lggr)
 	if err != nil {
 		return err
 	}
-	defer gs.Close()
-	go gs.UpdateAll()
-	w := watcher.NewService(gs, lggr)
+	go dc.UpdateAll(context.Background())
+	w := watcher.NewService(dc, lggr)
 	ch := make(chan os.Signal, 2) // len == 2: one for ctrl+C and one for /exit
-	http.HandleFunc("/", timer(handler(gs, w, lggr), lggr))
+	http.HandleFunc("/", timer(handler(dc, w, lggr), lggr))
 	http.HandleFunc("/exit", exitHandler(ch))
 
 	socket := GetSocketPath()
@@ -77,34 +77,28 @@ type Body struct {
 	Dir  string   `json:"dir"`
 }
 
-func handler(gs lister.Service, ws watcher.Service, lggr *logrus.Logger) http.HandlerFunc {
+func handler(dc cache.Service, ws watcher.Service, lggr *logrus.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var b Body
-		err := json.NewDecoder(r.Body).Decode(&b)
+		var cfg driver.Config
+		err := gob.NewDecoder(r.Body).Decode(&cfg)
 		if err != nil {
 			lggr.Warnf("incorrect request body: %v", err)
 			w.WriteHeader(400)
 			return
 		}
-		if s, ok := validDir(b.Dir); !ok {
-			fmt.Println(b.Dir, "is an invalid directory")
-			http.Error(w, s, 400)
-			return
-		}
-		bts, err := gs.Get(b.Dir, b.Args)
+		// TODO: check if valid files
+		bts, err := dc.Get(r.Context(), &cfg)
 		if err != nil {
-			// TODO: should pass stdout, stderr like a process.
 			fmt.Fprint(w, err.Error())
 			return
 		}
-		ws.Watch(b.Dir, b.Args)
 		w.Write(bts)
+		ws.Watch(&cfg)
 	}
 }
 
 func exitHandler(ch chan os.Signal) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// TODO: remove unix socket
 		go func() {
 			time.Sleep(time.Millisecond * 200)
 			ch <- os.Interrupt
