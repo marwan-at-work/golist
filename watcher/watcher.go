@@ -148,7 +148,7 @@ func (j *job) runWatcher() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 				err := j.dc.Update(ctx, j.cfg)
 				if err != nil {
-					j.lggr.Debugf("error updating %v: %v", event.Name, err)
+					j.lggr.Errorf("error updating %v: %v", event.Name, err)
 				}
 				cancel()
 			}
