@@ -61,11 +61,11 @@ func (c *service) Get(ctx context.Context, cfg *driver.Config) ([]byte, error) {
 	})
 
 	if resp != nil {
-		c.lggr.Debugf("%v is already in cache", cfg.Dir)
+		c.lggr.Debugf("%v is already in cache", cfg.Patterns)
 		return resp, nil
 	}
 
-	c.lggr.Debugf("%v is not in cache", cfg.Dir)
+	c.lggr.Debugf("%v is not in cache", cfg.Patterns)
 	err := c.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bname)
 		bts := b.Get(key)
@@ -80,7 +80,7 @@ func (c *service) Get(ctx context.Context, cfg *driver.Config) ([]byte, error) {
 				return fmt.Errorf("could not persist go list to boltdb: %v", err)
 			}
 		} else {
-			c.lggr.Debugf("%v is in cache", cfg.Dir)
+			c.lggr.Debugf("%v is in cache", cfg.Patterns)
 		}
 		resp = bts
 
@@ -93,10 +93,7 @@ func (c *service) Get(ctx context.Context, cfg *driver.Config) ([]byte, error) {
 func (c *service) Update(ctx context.Context, cfg *driver.Config) error {
 	key := hash.Key(cfg)
 	return c.db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(cfg.Dir))
-		if err != nil {
-			return fmt.Errorf("could not create bucket: %v", err)
-		}
+		b := tx.Bucket(bname)
 		bts, err := runDriver(ctx, cfg)
 		if err != nil {
 			return err
