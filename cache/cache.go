@@ -112,14 +112,18 @@ func (c *service) UpdateAll(ctx context.Context) error {
 			c.lggr.Debugf("updating: %v", cfg.Patterns)
 			bts, err := runDriver(ctx, cfg)
 			if err != nil {
-				c.lggr.Error(err)
-				return err
+				c.lggr.Errorf("driver err: %v", err)
+				c.lggr.Debugf("removing key: %s", key)
+				b.Delete(key)
+				continue
 			}
 			num++
 			err = b.Put(key, bts)
 			if err != nil {
-				c.lggr.Error(err)
-				return err
+				c.lggr.Errorf("udpate err: %v", err)
+				c.lggr.Debugf("removing key: %s", key)
+				b.Delete(key)
+				continue
 			}
 		}
 
