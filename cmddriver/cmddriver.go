@@ -120,7 +120,7 @@ func Main() {
 	}
 
 	req, _ := http.NewRequest(http.MethodPost, url, b)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	req = req.WithContext(ctx)
 	resp, err := client.Do(req)

@@ -145,7 +145,7 @@ func (j *job) runWatcher() {
 			j.requestExtension()
 			if event.Op&fsnotify.Write == fsnotify.Write {
 				j.lggr.Debugf("%v changed. Updating...", event.Name)
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 				err := j.dc.Update(ctx, j.cfg)
 				if err != nil {
 					j.lggr.Errorf("error updating %v: %v", event.Name, err)
