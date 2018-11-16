@@ -147,8 +147,9 @@ func getClient() *http.Client {
 	socket := server.GetSocketPath()
 	return &http.Client{
 		Transport: &http.Transport{DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("unix", socket)
+			return net.DialTimeout("unix", socket, time.Second*30)
 		}},
+		Timeout: time.Second * 30,
 	}
 }
 

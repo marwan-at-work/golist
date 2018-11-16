@@ -70,8 +70,9 @@ func (c *service) Get(ctx context.Context, cfg *driver.Config) ([]byte, error) {
 		b := tx.Bucket(bname)
 		bts := b.Get(key)
 		if bts == nil {
+			var err error
 			c.lggr.Debugf("running first driver for %v", cfg.Patterns)
-			bts, err := runDriver(ctx, cfg)
+			bts, err = runDriver(ctx, cfg)
 			if err != nil {
 				return err
 			}
