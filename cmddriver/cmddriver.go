@@ -91,7 +91,11 @@ func Main() {
 	}
 
 	client := getClient()
-	b, err := getBody(c)
+	var b io.Reader
+	var err error
+	if !c.exit {
+		b, err = getBody(c)
+	}
 	must(err)
 	url := "http://unix/"
 	if c.exit {
