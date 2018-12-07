@@ -32,19 +32,27 @@ type goTooOldError struct {
 
 // Config adjusted
 type Config struct {
-	// Mode controls the level of information returned for each package.
-	// Mode LoadMode
-
-	Patterns       []string
-	WantSizes      bool
-	WantDeps       bool
-	UsesExportData bool
-	context        context.Context
-	Dir            string
-	Env            []string
-	BuildFlags     []string
-	Tests          bool
+	Mode       LoadMode
+	Patterns   []string
+	context    context.Context
+	Dir        string
+	Env        []string
+	BuildFlags []string
+	Tests      bool
 }
+
+// A LoadMode specifies the amount of detail to return when loading.
+// Higher-numbered modes cause Load to return more information,
+// but may be slower. Load may return more information than requested.
+type LoadMode int
+
+const (
+	LoadFiles LoadMode = iota
+	LoadImports
+	LoadTypes
+	LoadSyntax
+	LoadAllSyntax
+)
 
 // DriverResponse contains the results for a driver query.
 type DriverResponse struct {
@@ -76,7 +84,7 @@ func GoListDriver(ctx context.Context, cfg *Config) (*DriverResponse, error) {
 	var sizes types.Sizes
 	var sizeserr error
 	var sizeswg sync.WaitGroup
-	if cfg.WantSizes {
+	if cfg.Mode >= LoadTypes {
 		sizeswg.Add(1)
 		go func() {
 			sizes, sizeserr = getSizes(cfg)
@@ -518,8 +526,8 @@ func golistargs(cfg *Config, words []string) []string {
 	fullargs := []string{
 		"list", "-e", "-json", "-compiled",
 		fmt.Sprintf("-test=%t", cfg.Tests),
-		fmt.Sprintf("-export=%t", cfg.UsesExportData),
-		fmt.Sprintf("-deps=%t", cfg.WantDeps),
+		fmt.Sprintf("-export=%t", usesExportData(cfg)),
+		fmt.Sprintf("-deps=%t", cfg.Mode >= LoadImports),
 	}
 	fullargs = append(fullargs, cfg.BuildFlags...)
 	fullargs = append(fullargs, "--")
@@ -712,9 +720,13 @@ func invokeGo(cfg *Config, args ...string) (*bytes.Buffer, error) {
 			return nil, goTooOldError{fmt.Errorf("unsupported version of go: %s: %s", exitErr, stderr)}
 		}
 
-		if !cfg.UsesExportData {
+		if !usesExportData(cfg) {
 			return nil, fmt.Errorf("go %v: %s: %s", args, exitErr, stderr)
 		}
 	}
 	return stdout, nil
+}
+
+func usesExportData(cfg *Config) bool {
+	return LoadTypes <= cfg.Mode && cfg.Mode < LoadAllSyntax
 }

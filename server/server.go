@@ -86,6 +86,7 @@ func handler(dc cache.Service, ws watcher.Service, lggr *logrus.Logger) http.Han
 			w.WriteHeader(400)
 			return
 		}
+		lggr.Debugf("received %v - mode: %v, test: %v", cfg.Patterns, cfg.Mode, cfg.Tests)
 		// TODO: check if valid files
 		bts, err := dc.Get(r.Context(), &cfg)
 		if err != nil {

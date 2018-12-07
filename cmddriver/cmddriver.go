@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"encoding/json"
 	"flag"
 	"io"
 	"log"
@@ -11,34 +12,25 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"marwan.io/golist/driver"
 	"marwan.io/golist/server"
 )
 
-type buildFlags []string
-
-func (bfs *buildFlags) String() string {
-	return strings.Join(*bfs, ", ")
-}
-
-func (bfs *buildFlags) Set(s string) error {
-	*bfs = append(*bfs, s)
-	return nil
-}
-
 type config struct {
-	server  bool
-	verbose bool
-	exit    bool
+	server   bool
+	verbose  bool
+	exit     bool
+	patterns []string
+}
 
-	useTest    bool
-	useExport  bool
-	useDeps    bool
-	buildFlags []string
-	patterns   []string
+type driverRequest struct {
+	Mode       driver.LoadMode   `json:"mode"`
+	Env        []string          `json:"env"`
+	BuildFlags []string          `json:"build_flags"`
+	Tests      bool              `json:"tests"`
+	Overlay    map[string][]byte `json:"overlay"`
 }
 
 func getFlags() *config {
@@ -47,45 +39,32 @@ func getFlags() *config {
 	verbose := fs.Bool("v", false, "verbose golist server")
 	exit := fs.Bool("exit", false, "exit the server")
 
-	useTest := fs.Bool("test", false, "go/packages test arg")
-	useExport := fs.Bool("export", false, "go/packages export arg")
-	useDeps := fs.Bool("deps", false, "go/packages deps arg")
-	bfs := buildFlags{}
-	fs.Var(&bfs, "buildflag", "go/packages buildflag arg")
-	if len(os.Args) < 2 {
-		log.Fatal("not enough args")
-	}
-	if os.Args[1] != "list" {
-		log.Fatal("first argument must be list")
-	}
-	err := fs.Parse(os.Args[2:])
+	err := fs.Parse(os.Args[1:])
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return &config{
-		server:  *sflag,
-		verbose: *verbose,
-		exit:    *exit,
-
-		useTest:    *useTest,
-		useExport:  *useExport,
-		useDeps:    *useDeps,
-		buildFlags: []string(bfs),
-		patterns:   fs.Args(),
+		server:   *sflag,
+		verbose:  *verbose,
+		exit:     *exit,
+		patterns: fs.Args(),
 	}
 }
 
 func getCfg(c *config) *driver.Config {
 	var cfg driver.Config
 	cfg.Patterns = c.patterns
-	cfg.WantSizes = true // go/packages doesn't send this
-	cfg.WantDeps = c.useDeps
-	cfg.UsesExportData = c.useExport
+
+	var dr driverRequest
+	must(json.NewDecoder(os.Stdin).Decode(&dr))
 	cfg.Dir = getDir()
-	cfg.Env = os.Environ()
-	cfg.BuildFlags = c.buildFlags
-	cfg.Tests = c.useTest
+	cfg.Mode = dr.Mode
+	cfg.Env = dr.Env
+	cfg.BuildFlags = dr.BuildFlags
+	cfg.Tests = dr.Tests
+	// TODO: overlay once go list takes overlay.
+
 	return &cfg
 }
 
