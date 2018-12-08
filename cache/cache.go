@@ -73,6 +73,11 @@ func (c *service) Get(ctx context.Context, cfg *driver.Config) ([]byte, error) {
 			var err error
 			c.lggr.Debugf("running first driver for %v", cfg.Patterns)
 			bts, err = runDriver(ctx, cfg)
+			if err == errSkipCache {
+				c.lggr.Debugf("skipping cache for %v", cfg.Patterns)
+				resp = bts
+				return nil
+			}
 			if err != nil {
 				return err
 			}
@@ -96,6 +101,11 @@ func (c *service) Update(ctx context.Context, cfg *driver.Config) error {
 	return c.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bname)
 		bts, err := runDriver(ctx, cfg)
+		if err == errSkipCache {
+			c.lggr.Debugf("updated cache is incorrect for %v", cfg.Patterns)
+			b.Delete(key)
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -137,11 +147,25 @@ func (c *service) Close() error {
 	return c.db.Close()
 }
 
+var errSkipCache = fmt.Errorf("internal errors, skip cache")
+
 func runDriver(ctx context.Context, cfg *driver.Config) ([]byte, error) {
 	dresp, err := driver.GoListDriver(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return json.Marshal(dresp)
+	bts, err := json.Marshal(dresp)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range dresp.Packages {
+		if len(p.Errors) > 0 {
+			err = errSkipCache
+			break
+		}
+	}
+
+	return bts, err
 }
